@@ -1,0 +1,66 @@
+@* Asks for a new Receipt's date and total, and adds it. Closes with the Receipt, or cancels. *@
+@inject AppCore App
+@inject IClock Clock
+
+<MudDialog>
+    <DialogContent>
+        <MudDatePicker @bind-Date="_date" Label="Date" MaxDate="@Clock.Today.ToDateTime(TimeOnly.MinValue)" />
+        <MudNumericField @bind-Value="_total" Label="Total paid" Adornment="Adornment.Start" AdornmentText="$"
+                         Format="0.00" HideSpinButtons="true" Immediate="true" AutoFocus="true"
+                         InputMode="@(InputMode.@decimal)" OnKeyUp="OnKeyUp" Class="mt-2" />
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="SaveAsync" Disabled="_saving">Add</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private DateTime? _date;
+    private decimal? _total;
+    private string? _error;
+    private bool _saving;
+
+    protected override void OnInitialized() => _date = Clock.Today.ToDateTime(TimeOnly.MinValue);
+
+    private async Task OnKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SaveAsync();
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_date is null || _total is null)
+        {
+            _error = "Enter the date and the total paid.";
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var receipt = await App.Receipts.AddReceiptAsync(DateOnly.FromDateTime(_date.Value), _total.Value);
+            MudDialog.Close(DialogResult.Ok(receipt));
+        }
+        catch (RuleViolationException ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

@@ -1,0 +1,58 @@
+@page "/"
+@inject AppCore App
+@inject IDialogService Dialogs
+
+<PageTitle>Finance Tracker</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-4" tabindex="-1" HtmlTag="h1">Receipts</MudText>
+
+@if (_receipts is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_receipts.Count == 0)
+{
+    <MudPaper Class="pa-6 d-flex flex-column align-center gap-2" Elevation="0" Outlined="true">
+        <MudIcon Icon="@Icons.Material.Filled.ReceiptLong" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.body1">No Receipts yet.</MudText>
+        <MudText Typo="Typo.body2" Color="Color.Secondary">Tap + to add one.</MudText>
+    </MudPaper>
+}
+else
+{
+    <MudPaper>
+        <MudList T="string" ReadOnly="true">
+            @foreach (var receipt in _receipts)
+            {
+                <MudListItem T="string">
+                    <div class="d-flex align-center">
+                        <span>@receipt.Date.ToString("ddd, MMM d, yyyy")</span>
+                        <MudSpacer />
+                        <span class="amount">@receipt.Total</span>
+                    </div>
+                </MudListItem>
+                <MudDivider />
+            }
+        </MudList>
+    </MudPaper>
+}
+
+<MudFab Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Add" Class="add-fab" aria-label="New Receipt"
+        OnClick="AddAsync" />
+
+@code {
+    private IReadOnlyList<Receipt>? _receipts;
+
+    protected override async Task OnInitializedAsync() => _receipts = await App.Receipts.ListReceiptsAsync();
+
+    private async Task AddAsync()
+    {
+        var dialog = await Dialogs.ShowAsync<AddReceiptDialog>("New Receipt",
+            new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true });
+        var result = await dialog.Result;
+        if (result is { Canceled: false })
+        {
+            _receipts = await App.Receipts.ListReceiptsAsync();
+        }
+    }
+}

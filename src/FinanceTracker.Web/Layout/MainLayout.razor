@@ -1,0 +1,49 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+
+<MudThemeProvider @ref="_themeProvider" Theme="AppTheme.Theme" IsDarkMode="_isDarkMode" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1" Dense="true">
+        <MudText Typo="Typo.h6">Finance Tracker</MudText>
+    </MudAppBar>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="pt-4 main-content">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private MudThemeProvider _themeProvider = default!;
+    private bool _isDarkMode;
+    private string? _statusBarColour;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Follow the device's dark mode, including if it changes while the app is open.
+            _isDarkMode = await _themeProvider.GetSystemDarkModeAsync();
+            await _themeProvider.WatchSystemDarkModeAsync(isDark =>
+            {
+                _isDarkMode = isDark;
+                return InvokeAsync(StateHasChanged);
+            });
+            StateHasChanged();
+        }
+
+        // The phone's status bar takes the top bar's colour.
+        var theme = AppTheme.Theme;
+        var barColour = (_isDarkMode ? theme.PaletteDark.AppbarBackground : theme.PaletteLight.AppbarBackground).ToString(MudBlazor.Utilities.MudColorOutputFormats.Hex);
+        if (barColour != _statusBarColour)
+        {
+            _statusBarColour = barColour;
+            await JS.InvokeVoidAsync("setThemeColor", barColour);
+        }
+    }
+}
