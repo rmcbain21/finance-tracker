@@ -4,12 +4,12 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-human (two-device check)
+**Status:** done
 
 - [x] **Human:** create a **new** Google Cloud OAuth client (web) for Finance Tracker with authorised JavaScript origins `https://rmcbain21.github.io` and a new `http://localhost:<port>` not used by the sibling apps, and give its client id for `wwwroot/appsettings.json`. Don't reuse a sibling's client, because Drive's `appDataFolder` belongs to the OAuth client.
 - [x] The sync engine and its tests come over with names changed; the sync file is `finance-tracker.json`.
-- [ ] Records added on the phone show up on the desktop after a sync, and deletions sync as tombstones.
-- [ ] A conflicting edit shows on the Sync Conflicts page with a badge on Settings, and the Owner picks a version.
+- [x] Records added on the phone show up on the desktop after a sync, and deletions sync as tombstones.
+- [x] A conflicting edit shows on the Sync Conflicts page with a badge on Settings, and the Owner picks a version.
 - [x] Export downloads all records as JSON, and importing that file into an empty app restores them.
 - [x] Appearance and Home Currency sync through the Settings record (fixed id), and the top bar has a Settings icon.
 - [x] The sync engine's table list is kept in one place, so later tickets add their tables there.
@@ -33,3 +33,5 @@ Still to do by hand:
 2. Two-device check: a Receipt added on the phone shows on the desktop after a sync. For a conflict, change Appearance differently on each device before syncing. A conflict should show on Sync Conflicts with a badge on the Settings icon. Deletions can only be checked by tests until 03 adds Receipt delete to the UI.
 
 **2026-11-14 (agent):** OAuth client created (own Google Cloud project, Testing mode, Owner as test user). Its client id is in `wwwroot/appsettings.json`. Build is clean and all 91 tests pass. Remaining: deploy and run the two-device check.
+
+**2026-11-14 (Owner):** Two-device check passed on the deployed app: phone-to-desktop sync, deletions, a Sync Conflict with the Settings badge, and Settings syncing.
