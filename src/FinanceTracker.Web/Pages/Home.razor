@@ -3,6 +3,7 @@
 @inject IDialogService Dialogs
 
 <PageTitle>Finance Tracker</PageTitle>
+<RefreshAfterSync OnChangesArrived="ReloadAsync" />
 
 <MudText Typo="Typo.h5" Class="mb-4" tabindex="-1" HtmlTag="h1">Receipts</MudText>
 
@@ -43,7 +44,9 @@ else
 @code {
     private IReadOnlyList<Receipt>? _receipts;
 
-    protected override async Task OnInitializedAsync() => _receipts = await App.Receipts.ListReceiptsAsync();
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync() => _receipts = await App.Receipts.ListReceiptsAsync();
 
     private async Task AddAsync()
     {

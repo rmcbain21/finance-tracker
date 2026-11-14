@@ -13,3 +13,5 @@
 - [ ] New tables are added to the sync engine's table list.
 
 ## Comments
+
+**2026-11-14 (agent, from 02):** The core already has `ReceiptCatalogue.GetReceiptAsync`, `UpdateReceiptAsync(id, date, total)` and `DeleteReceiptAsync(id)` (tombstone), which sync's tests needed. Extend them for Store and Category rather than adding new ones. Add the new tables (`chains`, `stores`, `categories`) to `RecordTable.All` in `Core/Sync/RecordTable.cs`, and give each a `case` in `ConflictDescriber` (`Core/Sync/SyncConflictView.cs`). The starter Categories' epoch `updatedAt` is already handled by `RecordCombine` ("never edited" means no conflict on a new device's first sync). Back in Backpacking Tracker there's a sync test for this (`A_new_devices_untouched_default_categories_do_not_undo_edits_made_elsewhere`) worth copying.

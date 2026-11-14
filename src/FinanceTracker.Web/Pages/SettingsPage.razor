@@ -1,0 +1,276 @@
+@page "/settings"
+@using System.Text
+@using FinanceTracker.Core.Sync
+@using FinanceTracker.Web.Adapters
+@implements IDisposable
+@inject AppCore App
+@inject GoogleDriveFileStore Drive
+@inject AutoSyncRunner Runner
+@inject ThemeState Theme
+@inject IJSRuntime JS
+
+<PageTitle>Settings</PageTitle>
+
+<MudText Typo="Typo.h5" HtmlTag="h1" GutterBottom="true">Settings</MudText>
+
+<MudPaper Class="pa-4">
+    <MudText Typo="Typo.subtitle1">Appearance</MudText>
+    <div class="stacked-radios">
+        <MudRadioGroup T="Appearance" Value="Theme.Appearance" ValueChanged="SetAppearanceAsync">
+            <MudRadio Value="Appearance.MatchDevice" Color="Color.Primary">Match my device</MudRadio>
+            <MudRadio Value="Appearance.Light" Color="Color.Primary">Light</MudRadio>
+            <MudRadio Value="Appearance.Dark" Color="Color.Primary">Dark</MudRadio>
+        </MudRadioGroup>
+    </div>
+</MudPaper>
+
+<MudPaper Class="pa-4 mt-4">
+    <MudText Typo="Typo.subtitle1">Home Currency</MudText>
+    <div class="stacked-radios">
+        <MudRadioGroup T="string" Value="_homeCurrency" ValueChanged="SetHomeCurrencyAsync">
+            <MudRadio Value="Money.Usd" Color="Color.Primary">US dollars (USD)</MudRadio>
+            <MudRadio Value="Money.Cad" Color="Color.Primary">Canadian dollars (CAD)</MudRadio>
+        </MudRadioGroup>
+    </div>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-2">
+        The currency spending is reported in by default. Amounts are kept in the currency they were paid in and
+        never converted.
+    </MudText>
+</MudPaper>
+
+<MudPaper Class="pa-4 mt-4">
+    <MudText Typo="Typo.subtitle1">Google Drive sync</MudText>
+    @if (_syncStatus is { Connected: false })
+    {
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+            Back up your data to your Google Drive and keep your devices in step. The app can only see its own
+            hidden file there, not your other files.
+        </MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudSync" Class="mt-2"
+                   OnClick="ConnectAsync" Disabled="Syncing">Connect Google Drive</MudButton>
+    }
+    else if (_syncStatus is { Connected: true })
+    {
+        <MudText Typo="Typo.body2" Class="mt-1 sync-last">
+            @(_syncStatus.LastSyncedAt is { } synced ? $"Last synced {synced.ToLocalTime():MMM d, yyyy, h:mm tt}" : "Not synced yet")
+        </MudText>
+        <div class="d-flex flex-wrap gap-2 mt-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Sync"
+                       OnClick="SyncNowAsync" Disabled="Syncing">Sync now</MudButton>
+            <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.CloudOff"
+                       OnClick="DisconnectAsync" Disabled="Syncing">Disconnect</MudButton>
+        </div>
+    }
+
+    @if (_syncStatus is { PendingConflicts: > 0 and var pending })
+    {
+        <MudButton Href="sync/conflicts" Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Warning"
+                   Class="mt-2">@pending Sync @(pending == 1 ? "Conflict" : "Conflicts") to settle</MudButton>
+    }
+
+    @if (Syncing)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mt-2" />
+    }
+
+    @if (_signInProblem is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-2">@_signInProblem</MudAlert>
+    }
+    else if (_syncStatus is { Connected: true } && App.AutoSync is { Syncing: false, Problem: not SyncProblem.None, Message: { } problem })
+    {
+        <MudAlert Severity="@(App.AutoSync.Problem == SyncProblem.Offline ? Severity.Info : Severity.Warning)" Class="mt-2">
+            @problem
+        </MudAlert>
+    }
+
+    @if (_syncSummary is not null)
+    {
+        <MudAlert Severity="Severity.Success" Class="mt-2">
+            @(_syncSummary.NothingChanged
+                ? "Synced. Nothing new from your other devices."
+                : _syncSummary.Changes.Count == 0
+                    ? "Synced."
+                    : $"Synced: {string.Join(" · ", _syncSummary.Changes.Select(Describe))}")
+        </MudAlert>
+    }
+</MudPaper>
+
+<MudPaper Class="pa-4 mt-4">
+    <MudText Typo="Typo.subtitle1">Backup</MudText>
+    <MudText Typo="Typo.body2" Class="mud-text-secondary mt-1">
+        Export saves all your data to a file. Importing a file combines it with what's here: for anything in both,
+        the more recently changed version is kept.
+    </MudText>
+    <div class="d-flex flex-wrap gap-2 mt-2">
+        <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportAsync" Disabled="_busy">
+            Export
+        </MudButton>
+        <MudButton HtmlTag="label" for="backup-file" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.UploadFile"
+                   Disabled="_busy">Import</MudButton>
+        <InputFile id="backup-file" OnChange="ImportAsync" accept=".json,application/json" hidden />
+    </div>
+
+    @if (_busy)
+    {
+        <MudProgressLinear Indeterminate="true" Class="mt-2" />
+    }
+
+    @if (_backupProblem is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mt-2">@_backupProblem</MudAlert>
+    }
+
+    @if (_importSummary is not null)
+    {
+        <MudAlert Severity="Severity.Success" Class="mt-2">
+            @if (_importSummary.NothingChanged)
+            {
+                <text>Imported. Nothing changed: you already had everything in that file.</text>
+            }
+            else
+            {
+                <text>Imported: @string.Join(" · ", _importSummary.Changes.Select(Describe))</text>
+            }
+        </MudAlert>
+    }
+</MudPaper>
+
+@code {
+    // Room for years of Receipts; a backup is mostly text (Receipt Photos are never in it).
+    private const long MaxBackupBytes = 50_000_000;
+
+    private string _homeCurrency = Money.Usd;
+    private bool _busy;
+    private string? _backupProblem;
+    private ChangeSummary? _importSummary;
+    private SyncStatus? _syncStatus;
+    private string? _signInProblem;
+    private ChangeSummary? _syncSummary;
+
+    private bool Syncing => App.AutoSync.Syncing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _homeCurrency = (await App.Settings.GetAsync()).HomeCurrency;
+        _syncStatus = await App.Sync.GetStatusAsync();
+        App.AutoSync.Changed += OnSyncChanged;
+    }
+
+    // Automatic sync can run while this page is open: show its outcome.
+    private void OnSyncChanged() => InvokeAsync(async () =>
+    {
+        _syncStatus = await App.Sync.GetStatusAsync();
+        _homeCurrency = (await App.Settings.GetAsync()).HomeCurrency;
+        StateHasChanged();
+    });
+
+    private Task ConnectAsync() =>
+        RunSyncAsync(async () =>
+        {
+            await Drive.SignInAsync();
+            _syncSummary = await App.AutoSync.ConnectAsync();
+        });
+
+    private Task SyncNowAsync() => RunSyncAsync(async () => _syncSummary = await Runner.SignInAndSyncAsync());
+
+    private Task DisconnectAsync() =>
+        RunSyncAsync(async () =>
+        {
+            await Drive.SignOutAsync();
+            await App.AutoSync.DisconnectAsync();
+        });
+
+    /// <summary>Runs a sync action from a tap. Sync failures show as the sync's problem; sign-in failures show here.</summary>
+    private async Task RunSyncAsync(Func<Task> action)
+    {
+        _signInProblem = null;
+        _syncSummary = null;
+        try
+        {
+            await action();
+        }
+        catch (CloudFileStoreException ex)
+        {
+            _signInProblem = ex.Message;
+        }
+        finally
+        {
+            _syncStatus = await App.Sync.GetStatusAsync();
+        }
+    }
+
+    public void Dispose() => App.AutoSync.Changed -= OnSyncChanged;
+
+    /// <summary>Shows Settings that an import may have brought from elsewhere.</summary>
+    private async Task ApplySavedSettingsAsync()
+    {
+        var settings = await App.Settings.GetAsync();
+        _homeCurrency = settings.HomeCurrency;
+        Theme.Set(settings.Appearance);
+    }
+
+    private async Task SetAppearanceAsync(Appearance appearance)
+    {
+        await App.Settings.SetAppearanceAsync(appearance);
+        Theme.Set(appearance);
+    }
+
+    private async Task SetHomeCurrencyAsync(string currency)
+    {
+        _homeCurrency = currency;
+        await App.Settings.SetHomeCurrencyAsync(currency);
+    }
+
+    private async Task ExportAsync()
+    {
+        _busy = true;
+        _backupProblem = null;
+        _importSummary = null;
+        try
+        {
+            var json = await App.Backup.ExportAsync();
+            await JS.InvokeVoidAsync("downloadFile", $"finance-tracker-{DateTime.Now:yyyy-MM-dd}.json", json, "application/json");
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task ImportAsync(InputFileChangeEventArgs e)
+    {
+        _busy = true;
+        _backupProblem = null;
+        _importSummary = null;
+        try
+        {
+            if (e.File.Size > MaxBackupBytes)
+            {
+                _backupProblem = "That file is too big to be a Finance Tracker export (over 50 MB).";
+                return;
+            }
+
+            using var reader = new StreamReader(e.File.OpenReadStream(MaxBackupBytes), Encoding.UTF8);
+            _importSummary = await App.Backup.ImportAsync(await reader.ReadToEndAsync());
+            await ApplySavedSettingsAsync();
+        }
+        catch (RuleViolationException ex)
+        {
+            _backupProblem = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    /// <summary>Such as "Receipts: 3 added, 1 updated".</summary>
+    private static string Describe(RecordTypeChanges changes)
+    {
+        var parts = new[] { (changes.Added, "added"), (changes.Updated, "updated"), (changes.Deleted, "deleted") }
+            .Where(part => part.Item1 > 0)
+            .Select(part => $"{part.Item1} {part.Item2}");
+        return $"{changes.RecordType}: {string.Join(", ", parts)}";
+    }
+}

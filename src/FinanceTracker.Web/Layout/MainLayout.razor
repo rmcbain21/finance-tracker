@@ -1,49 +1,165 @@
 @inherits LayoutComponentBase
+@implements IDisposable
+@inject AppCore App
+@inject ThemeState Theme
+@inject PendingConflicts Pending
+@inject AutoSyncRunner Runner
+@inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@using FinanceTracker.Core.Sync
 
-<MudThemeProvider @ref="_themeProvider" Theme="AppTheme.Theme" IsDarkMode="_isDarkMode" />
+<MudThemeProvider @ref="_themeProvider" Theme="AppTheme.Theme" IsDarkMode="IsDarkMode" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
-<MudLayout>
-    <MudAppBar Elevation="1" Dense="true">
-        <MudText Typo="Typo.h6">Finance Tracker</MudText>
-    </MudAppBar>
+<CascadingValue Value="IsDarkMode" Name="IsDarkMode">
+    <MudLayout>
+        <MudAppBar Elevation="1" Dense="true">
+            <MudLink Href="" Typo="Typo.h6" Color="Color.Inherit" Underline="Underline.None">Finance Tracker</MudLink>
+            <MudSpacer />
+            @if (_connected)
+            {
+                var (icon, label, spinning) = SyncIcon();
+                <MudIconButton Href="settings" Icon="@icon" Color="Color.Inherit" aria-label="@label" title="@label"
+                               Class="@(spinning ? "sync-spinning" : "")" />
+            }
+            <MudBadge Content="Pending.Count" Visible="Pending.Count > 0" Color="Color.Error" Overlap="true" Bordered="true" Class="settings-badge">
+                <MudIconButton Href="settings" Icon="@Icons.Material.Filled.Settings" Color="Color.Inherit"
+                               aria-label="@(Pending.Count switch { 0 => "Settings", 1 => "Settings, 1 Sync Conflict to settle", var n => $"Settings, {n} Sync Conflicts to settle" })" />
+            </MudBadge>
+        </MudAppBar>
 
-    <MudMainContent>
-        <MudContainer MaxWidth="MaxWidth.Large" Class="pt-4 main-content">
-            @Body
-        </MudContainer>
-    </MudMainContent>
-</MudLayout>
+        <MudMainContent>
+            @if (BannerShown)
+            {
+                <div class="sync-banner" role="status">
+                    <MudIcon Icon="@Icons.Material.Filled.SyncProblem" Size="Size.Small" />
+                    <MudText Typo="Typo.body2" Class="flex-grow-1">
+                        @(App.AutoSync.Problem == SyncProblem.SignInNeeded ? "Sync is paused" : App.AutoSync.Message)
+                    </MudText>
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" OnClick="SignInAndSyncAsync"
+                               Disabled="App.AutoSync.Syncing">
+                        @(App.AutoSync.Problem == SyncProblem.SignInNeeded ? "Sign in" : "Try now")
+                    </MudButton>
+                    <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" aria-label="Hide"
+                                   OnClick="() => _bannerHidden = true" />
+                </div>
+            }
+            <MudContainer MaxWidth="MaxWidth.Large" Class="pt-4 main-content">
+                @Body
+            </MudContainer>
+        </MudMainContent>
+    </MudLayout>
+</CascadingValue>
 
 @code {
     private MudThemeProvider _themeProvider = default!;
-    private bool _isDarkMode;
+    private bool _deviceIsDark;
     private string? _statusBarColour;
+    private bool _connected;
+
+    // Hidden with its × until the problem clears (or the app is opened again).
+    private bool _bannerHidden;
+
+    private bool BannerShown =>
+        _connected && !_bannerHidden && App.AutoSync.Problem is SyncProblem.SignInNeeded or SyncProblem.Failed;
+
+    private (string Icon, string Label, bool Spinning) SyncIcon() =>
+        App.AutoSync switch
+        {
+            { Syncing: true } => (Icons.Material.Filled.Sync, "Syncing", true),
+            { Problem: SyncProblem.Offline } => (Icons.Material.Filled.CloudOff, "Offline: changes will sync when you're back online", false),
+            { Problem: SyncProblem.SignInNeeded } => (Icons.Material.Filled.SyncProblem, "Sync is paused: sign in to Google", false),
+            { Problem: SyncProblem.Failed } => (Icons.Material.Filled.SyncProblem, "Sync failed: it will try again", false),
+            _ => (Icons.Material.Filled.CloudDone, "Synced", false),
+        };
+
+    private bool IsDarkMode => Theme.Appearance switch
+    {
+        Appearance.Dark => true,
+        Appearance.Light => false,
+        _ => _deviceIsDark,
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        Theme.Changed += OnThemeChanged;
+        Pending.Changed += OnPendingChanged;
+        App.AutoSync.Changed += OnSyncChanged;
+        Theme.Set((await App.Settings.GetAsync()).Appearance);
+        await RefreshSyncStatusAsync();
+    }
+
+    private void OnSyncChanged() => InvokeAsync(async () =>
+    {
+        if (App.AutoSync.Problem == SyncProblem.None)
+        {
+            _bannerHidden = false;
+        }
+
+        // A sync that ended may have brought Settings from another device.
+        if (!App.AutoSync.Syncing)
+        {
+            Theme.Set((await App.Settings.GetAsync()).Appearance);
+        }
+
+        await RefreshSyncStatusAsync();
+        StateHasChanged();
+    });
+
+    private async Task RefreshSyncStatusAsync()
+    {
+        var status = await App.Sync.GetStatusAsync();
+        _connected = status.Connected;
+        Pending.Set(status.PendingConflicts);
+    }
+
+    private async Task SignInAndSyncAsync()
+    {
+        try
+        {
+            await Runner.SignInAndSyncAsync();
+        }
+        catch (CloudFileStoreException ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Warning);
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            // Follow the device's dark mode, including if it changes while the app is open.
-            _isDarkMode = await _themeProvider.GetSystemDarkModeAsync();
+            // Match my device: read the device's dark mode, and follow it if it changes while the app is open.
+            _deviceIsDark = await _themeProvider.GetSystemDarkModeAsync();
             await _themeProvider.WatchSystemDarkModeAsync(isDark =>
             {
-                _isDarkMode = isDark;
+                _deviceIsDark = isDark;
                 return InvokeAsync(StateHasChanged);
             });
             StateHasChanged();
+            await Runner.StartAsync();
         }
 
         // The phone's status bar takes the top bar's colour.
         var theme = AppTheme.Theme;
-        var barColour = (_isDarkMode ? theme.PaletteDark.AppbarBackground : theme.PaletteLight.AppbarBackground).ToString(MudBlazor.Utilities.MudColorOutputFormats.Hex);
+        var barColour = (IsDarkMode ? theme.PaletteDark.AppbarBackground : theme.PaletteLight.AppbarBackground).ToString(MudBlazor.Utilities.MudColorOutputFormats.Hex);
         if (barColour != _statusBarColour)
         {
             _statusBarColour = barColour;
             await JS.InvokeVoidAsync("setThemeColor", barColour);
         }
+    }
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnPendingChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Theme.Changed -= OnThemeChanged;
+        Pending.Changed -= OnPendingChanged;
+        App.AutoSync.Changed -= OnSyncChanged;
     }
 }

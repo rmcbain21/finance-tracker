@@ -100,6 +100,56 @@ public class ReceiptTests
     }
 
     [Fact]
+    public async Task An_edited_receipt_keeps_its_id_and_gets_the_new_date_total_and_time()
+    {
+        var app = CreateApp();
+        var receipt = await app.Receipts.AddReceiptAsync(Today, 10m);
+        _clock.UtcNow += TimeSpan.FromMinutes(5);
+
+        await app.Receipts.UpdateReceiptAsync(receipt.Id, Today.AddDays(-1), 12.34m);
+
+        var edited = Assert.Single(await CreateApp().Receipts.ListReceiptsAsync());
+        Assert.Equal((receipt.Id, Today.AddDays(-1), 12.34m, _clock.UtcNow), (edited.Id, edited.Date, edited.Total.Amount, edited.UpdatedAt));
+    }
+
+    [Fact]
+    public async Task An_edit_follows_the_same_rules_as_adding()
+    {
+        var app = CreateApp();
+        var receipt = await app.Receipts.AddReceiptAsync(Today, 10m);
+
+        await Assert.ThrowsAsync<RuleViolationException>(() => app.Receipts.UpdateReceiptAsync(receipt.Id, Today, 0m));
+        await Assert.ThrowsAsync<RuleViolationException>(() => app.Receipts.UpdateReceiptAsync(receipt.Id, Today.AddDays(1), 10m));
+        Assert.Equal(10m, (await app.Receipts.GetReceiptAsync(receipt.Id))!.Total.Amount);
+    }
+
+    [Fact]
+    public async Task A_deleted_receipt_is_kept_as_a_tombstone_and_no_longer_listed()
+    {
+        var app = CreateApp();
+        var receipt = await app.Receipts.AddReceiptAsync(Today, 10m);
+        _clock.UtcNow += TimeSpan.FromMinutes(5);
+
+        await app.Receipts.DeleteReceiptAsync(receipt.Id);
+
+        Assert.Empty(await app.Receipts.ListReceiptsAsync());
+        Assert.Null(await app.Receipts.GetReceiptAsync(receipt.Id));
+        var tombstone = Assert.Single(await _store.ListAsync<Receipt>("receipts"));
+        Assert.Equal((true, _clock.UtcNow), (tombstone.Deleted, tombstone.UpdatedAt));
+    }
+
+    [Fact]
+    public async Task A_deleted_receipt_cannot_be_edited_or_deleted_again()
+    {
+        var app = CreateApp();
+        var receipt = await app.Receipts.AddReceiptAsync(Today, 10m);
+        await app.Receipts.DeleteReceiptAsync(receipt.Id);
+
+        await Assert.ThrowsAsync<RuleViolationException>(() => app.Receipts.UpdateReceiptAsync(receipt.Id, Today, 11m));
+        await Assert.ThrowsAsync<RuleViolationException>(() => app.Receipts.DeleteReceiptAsync(receipt.Id));
+    }
+
+    [Fact]
     public async Task Receipts_are_in_us_dollars_until_stores_arrive()
     {
         var receipt = await CreateApp().Receipts.AddReceiptAsync(Today, 5m);

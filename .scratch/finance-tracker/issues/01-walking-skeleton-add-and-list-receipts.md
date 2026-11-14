@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-human (Android install check)
+**Status:** done
 
 - [x] The core depends only on the record store and clock ports; tests use an in-memory record store and a controllable clock.
 - [x] Every record has a GUID `id`, a UTC `updatedAt` from the clock and a `deleted` tombstone flag.
@@ -12,7 +12,7 @@
 - [x] Through the core API I can add a Receipt (date, total) and list Receipts newest first; tests cover adding, listing and persistence.
 - [x] The Dexie adapter stores records in one `records` table keyed by `[table+id]`; data survives a reload.
 - [x] The home page lists Receipts (date, total) and has a "＋" button that adds one.
-- [ ] A Release publish installs from Chrome on Android and works offline after the first visit.
+- [x] A Release publish installs from Chrome on Android and works offline after the first visit.
 
 ## Comments
 
@@ -23,3 +23,5 @@ Copied from Recipe Tracker and renamed: `StoredRecord`, `RuleViolationException`
 Checked in a headless browser against a Release publish (phone-sized viewport): empty state, adding a Receipt, the zero-total rule message, the Receipt surviving a reload, and the app loading offline with the Receipt still there once the service worker has cached it. No console errors.
 
 Still to check by hand: installing from Chrome on Android and working offline. That needs the GitHub repo and Pages set up (Settings → Pages → Source: GitHub Actions), since there's no remote yet.
+
+**2026-11-14 (Owner):** Installed the deployed app from Chrome on Android; confirmed.

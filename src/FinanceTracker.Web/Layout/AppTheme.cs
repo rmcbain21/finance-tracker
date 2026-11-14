@@ -3,7 +3,7 @@ using MudBlazor;
 namespace FinanceTracker.Web.Layout;
 
 /// <summary>
-/// The app's colours, light and dark. Appearance follows the device until Settings can choose it (ticket 02).
+/// The app's colours, light and dark. Settings → Appearance picks which (MainLayout applies it).
 /// </summary>
 public static class AppTheme
 {
